@@ -24,6 +24,9 @@
     #progressBar { height: 8px; width:100%; background: #222; border-radius: 8px; overflow: hidden; }
     #bar { height:100%; width:0%; background: #4ade80; transition: width .2s linear; }
   </style>
+  <!-- three.js HDR/EXR loaders for equirectangular textures -->
+  <script src="https://cdn.jsdelivr.net/npm/three@0.160.0/examples/js/loaders/RGBELoader.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/three@0.160.0/examples/js/loaders/EXRLoader.js"></script>
 </head>
 <body>
   <!-- 360° Scene -->
@@ -183,7 +186,38 @@
     }
 
     function setSky(src) {
-      sky.setAttribute('src', src);
+      // Auto-detect by extension.
+      const isHDR = /\.hdr$/i.test(src);
+      const isEXR = /\.exr$/i.test(src);
+      const sceneObj = document.querySelector('a-scene').object3D;
+      // Clean up previous background/texture
+      try {
+        const oldBg = sceneObj.background;
+        if (oldBg && oldBg.dispose) oldBg.dispose();
+      } catch(e) {}
+
+      if (isHDR || isEXR) {
+        // Hide <a-sky> when using true HDR background
+        sky.setAttribute('visible', false);
+        const loader = isEXR ? new THREE.EXRLoader() : new THREE.RGBELoader();
+        loader.setDataType(THREE.UnsignedByteType);
+        loader.load(src, (tex) => {
+          tex.mapping = THREE.EquirectangularReflectionMapping;
+          sceneObj.background = tex; // Use as scene background for full 360 pano
+          log(`HDR/EXR loaded: ${src}`);
+        }, undefined, (err) => {
+          console.error('HDR/EXR load error', err);
+          // Fallback: keep sky visible but it won't load HDR; show status
+          sky.setAttribute('visible', true);
+          sky.setAttribute('src', '');
+          log('HDR/EXRを読み込めませんでした。JPG/PNG/WebPへのトーンマップ変換をご検討ください。');
+        });
+      } else {
+        // Standard LDR path (JPG/PNG/WebP)
+        sceneObj.background = null; // ensure no HDR bg remains
+        sky.setAttribute('visible', true);
+        sky.setAttribute('src', src);
+      }
     }
 
     function log(msg) {
