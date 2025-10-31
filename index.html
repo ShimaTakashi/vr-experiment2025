@@ -3,195 +3,88 @@
 <head>
   <meta charset="utf-8"/>
   <meta name="viewport" content="width=device-width, initial-scale=1"/>
-  <title>VR Experiment (HDR fully robust)</title>
+  <title>VR Experiment - HDR Stable</title>
 
-  <!-- A-Frame (THREEを内包) -->
+  <!-- ❤️ A-Frame 本体 -->
   <script src="https://aframe.io/releases/1.5.0/aframe.min.js"></script>
 
-  <!-- three r152系 の HDR/EXR ローダ（A-Frame 1.5.0 と相性◎）-->
-  <script src="https://cdn.jsdelivr.net/npm/three@0.152.2/examples/js/loaders/RGBELoader.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/three@0.152.2/examples/js/loaders/EXRLoader.js"></script>
+  <!-- ✅ A-Frame 用 HDR sky コンポーネント（three互換整備済み） -->
+  <script src="https://cdn.jsdelivr.net/npm/aframe-hdr-environment-component/dist/aframe-hdr-environment-component.min.js"></script>
 
   <style>
-    html,body{margin:0;height:100%;background:#000;font-family:system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, "Noto Sans JP", Meiryo, sans-serif}
-    #ui,#next{position:fixed;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;background:rgba(0,0,0,.85);color:#fff;z-index:9999}
-    #ui input,#ui select{font-size:1.05rem;padding:.6rem .9rem;border-radius:.6rem;border:1px solid #444;background:#111;color:#fff}
-    button{padding:.8rem 1.4rem;border:1px solid #666;background:#1a7f5a;color:#fff;border-radius:.6rem;font-size:1.05rem;cursor:pointer}
-    #log{position:fixed;left:10px;bottom:10px;color:#0f0;background:rgba(0,0,0,.6);padding:.44rem .6rem;border-radius:.4rem;font:12px/1.3 monospace;z-index:10000;max-width:72vw;white-space:pre-wrap}
+    html,body{margin:0;height:100%;background:#000;font-family:system-ui;}
+    #ui,#next{position:fixed;inset:0;display:flex;flex-direction:column;justify-content:center;align-items:center;background:rgba(0,0,0,.8);color:#fff;z-index:9999}
+    #log{position:fixed;left:10px;bottom:10px;color:#0f0;background:rgba(0,0,0,.6);padding:.4rem .6rem;border-radius:.4rem;font:12px monospace;white-space:pre-wrap;z-index:10000}
+    button,input,select{font-size:1.05rem;padding:.6rem .9rem;border-radius:.6rem;}
   </style>
 </head>
 <body>
 
-<!-- スタートUI -->
 <div id="ui">
-  <h2>360° 提示 + フォーム評価（HDR対応）</h2>
-  <p style="text-align:center;opacity:.85">
-    1枚目の提示から <b>10秒後</b> にGoogleフォームが開きます。<br>
-    送信後に「次へ」を押すと次の画像へ。全 <span id="total">16</span> 条件。
-  </p>
-  <div style="display:flex;gap:12px;flex-wrap:wrap;justify-content:center">
-    <div><div>被験者ID</div><input id="pid" placeholder="例: S001"></div>
-    <div><div>乱数シード（任意）</div><input id="seed" placeholder="未入力なら自動"></div>
-    <div><div>ロック秒</div>
-      <select id="lock">
-        <option value="10" selected>10秒</option>
-        <option value="15">15秒</option>
-        <option value="20">20秒</option>
-      </select>
-    </div>
-  </div>
-  <div style="margin-top:16px"><button id="start">開始</button></div>
-  <small style="opacity:.7;margin-top:10px">Quest ブラウザで全画面にして実施してください。</small>
+  <h2>360° HDR 実験</h2>
+  <div>被験者ID</div>
+  <input id="pid" placeholder="例: S001">
+  <div style="margin-top:1rem"><button id="start">開始</button></div>
 </div>
 
-<!-- 回答促しUI -->
-<div id="next" style="display:none">
-  <div style="text-align:center">
-    <div style="font-size:1.15rem">Googleフォームに回答し、<b>送信</b>してください。</div>
-    <div style="opacity:.8;margin:.6rem 0 .9rem">送信後、下のボタンで次の画像へ</div>
-    <button id="nextBtn">次へ</button>
-  </div>
+<div id="next" style="display:none;">
+  <div>フォーム送信後「次へ」</div>
+  <button id="nextBtn">次へ</button>
 </div>
 
-<!-- デバッグログ -->
 <div id="log">log:</div>
 
-<!-- シーン（HDRが映える設定） -->
-<a-scene
-  renderer="colorManagement:true; physicallyCorrectLights:true; toneMapping:ACESFilmic; toneMappingExposure:1.0"
-  vr-mode-ui="enabled:true">
-  <a-sky id="sky" radius="10"></a-sky>
+<!-- ✅ HDR sky を使う A-Frame シーン -->
+<a-scene renderer="colorManagement:true; toneMapping:ACESFilmic; toneMappingExposure:1.0">
+  <a-entity id="env"
+    hdr-environment="path: 1.hdr"></a-entity>
   <a-entity camera look-controls></a-entity>
 </a-scene>
 
 <script>
-/* ========= 設定 ========= */
 const GOOGLE_FORM_URL =
   "https://docs.google.com/forms/d/e/1FAIpQLSc7bClpct_WSlABMw2oSgxIvqLSIBBuCK_s9rOElQB025EAZw/viewform";
 
-/* あなたのHDR（リポジトリ直下配置） */
-let IMAGES = [
+const IMAGES = [
   '1.hdr','8.hdr','15.hdr','22.hdr','29.hdr','36.hdr',
   '43.hdr','50.hdr','57.hdr','64.hdr','71.hdr','78.hdr',
   '85.hdr','92.hdr','99.hdr','106.hdr'
 ];
 
-/* ========= ユーティリティ ========= */
-const $ = s => document.querySelector(s);
-function log(m){ const el=$('#log'); el.textContent += "\n"+m; console.log(m); }
-window.addEventListener('error', e=>log('⚠ JS Error: '+e.message));
+const $ = s=>document.querySelector(s);
+function log(m){ $('#log').textContent += "\n"+m; console.log(m); }
 
-function shuffle(arr, seedStr){
-  const a=[...arr]; let rnd=Math.random;
-  if (seedStr && seedStr.trim()!==''){
-    let h=2166136261; for (let i=0;i<seedStr.length;i++){ h^=seedStr.charCodeAt(i); h=Math.imul(h,16777619); }
-    let x=h>>>0; rnd=()=>{ x^=x<<13; x>>>=0; x^=x>>>17; x>>>=0; x^=x<<5; x>>>=0; return (x>>>0)/0xFFFFFFFF; };
-  }
-  for (let i=a.length-1;i>0;i--){ const j=Math.floor(rnd()*(i+1)); [a[i],a[j]]=[a[j],a[i]]; }
-  return a;
+let idx=0;
+
+function showImage(){
+  const src = IMAGES[idx];
+  log(`show ${idx+1}/${IMAGES.length}: ${src}`);
+  $('#env').setAttribute('hdr-environment', `path: ${src}`);
+
+  // lock 10秒 → フォーム開く
+  setTimeout(()=> {
+    window.open(GOOGLE_FORM_URL,'_blank');
+    $('#next').style.display='flex';
+  }, 10000);
 }
 
-/* ========= 状態 ========= */
-let pid='', order=[], idx=-1, lockSec=10, sceneReady=false;
+$('#start').onclick = ()=>{
+  $('#ui').style.display='none';
+  showImage();
+};
 
-/* ========= HDR適用（完全版） ========= */
-async function setHDR(src){
-  const sceneObj = document.querySelector('a-scene').object3D;
-  const sky = $('#sky');
-  const isHDR=/\.hdr$/i.test(src), isEXR=/\.exr$/i.test(src);
-
-  // 事前フェッチ（404/CORS検知）
-  try{
-    const r = await fetch(src,{method:'GET'});
-    if(!r.ok){ log(`❌ fetch NG (${r.status}) ${src}`); }
-    else { log(`fetch OK ${src} (${r.headers.get('content-type')||''})`); }
-  }catch(e){ log(`❌ fetch error ${src}: `+e.message); }
-
-  // 旧背景破棄
-  try{ if(sceneObj.background && sceneObj.background.dispose) sceneObj.background.dispose(); }catch(e){}
-
-  if(!(isHDR||isEXR)){
-    // LDRフォールバック用（今回は使わない想定）
-    sceneObj.background=null; sky.setAttribute('visible',true); sky.setAttribute('src',src);
+$('#nextBtn').onclick = ()=>{
+  $('#next').style.display='none';
+  idx++;
+  if(idx >= IMAGES.length){
+    alert("完了しました。おつかれさまです！");
     return;
   }
+  showImage();
+};
 
-  sky.setAttribute('visible', false);
-
-  // 🔑 ローダ参照（window.* / THREE.* 両対応）
-  const RGBE = window.RGBELoader || (window.THREE && THREE.RGBELoader);
-  const EXR  = window.EXRLoader  || (window.THREE && THREE.EXRLoader);
-  const LoaderClass = isEXR ? EXR : RGBE;
-
-  if(!LoaderClass){ log('❌ Loader not found on window.* nor THREE.*'); return; }
-
-  // 内部ヘルパ：指定データ型で読み込み
-  const tryLoad = (dataType, label) => new Promise((resolve,reject)=>{
-    const loader = new LoaderClass();
-    if (loader.setDataType) loader.setDataType(dataType);
-    log(`loading (${label}) ${src}`);
-    loader.load(src, (tex)=>{
-      tex.mapping = THREE.EquirectangularReflectionMapping;
-      tex.needsUpdate = true;
-      sceneObj.background = tex;
-      log(`✅ applied (${label}) ${src}`);
-      resolve();
-    }, undefined, (err)=>{ log(`⚠ load error (${label}) ${src}`); reject(err); });
-  });
-
-  // HalfFloat → UnsignedByte の順で自動フォールバック
-  try{
-    await tryLoad(THREE.HalfFloatType, 'HalfFloat');
-  }catch(_){
-    try{
-      await tryLoad(THREE.UnsignedByteType, 'UnsignedByte');
-    }catch(e2){
-      log('❌ both loaders failed: '+src);
-      console.error(e2);
-      sceneObj.background=null; sky.setAttribute('visible',true); sky.setAttribute('src','');
-    }
-  }
-}
-
-/* ========= 流れ ========= */
-function nextImage(){
-  idx++;
-  if(idx>=order.length){ alert('完了しました。ご協力ありがとうございました。'); return; }
-  const src = order[idx];
-  log(`show ${idx+1}/${order.length}: ${src}`);
-  setHDR(src).then(()=>{
-    setTimeout(()=>{
-      window.open(GOOGLE_FORM_URL,'_blank');
-      $('#next').style.display='flex';
-    }, lockSec*1000);
-  });
-}
-
-function startExperiment(){
-  pid = $('#pid').value.trim(); if(!pid){ alert('被験者IDを入力してください'); return; }
-  lockSec = parseInt($('#lock').value,10) || 10;
-  order = shuffle(IMAGES, $('#seed').value.trim());
-  $('#total').textContent = String(order.length);
-  $('#ui').style.display='none';
-  const go=()=>{ if(sceneReady) nextImage(); else setTimeout(go,120); }; go();
-}
-
-function continueToNext(){ $('#next').style.display='none'; nextImage(); }
-
-/* ========= イベント ========= */
-document.addEventListener('DOMContentLoaded', ()=>{
-  $('#start').addEventListener('click', startExperiment);
-  $('#nextBtn').addEventListener('click', continueToNext);
-
-  const sceneEl=document.querySelector('a-scene');
-  sceneEl.addEventListener('loaded',()=>{ sceneReady=true; log('scene loaded'); });
-
-  // URLクエリ指定対応
-  const q=new URLSearchParams(location.search);
-  if(q.get('pid'))  $('#pid').value=q.get('pid');
-  if(q.get('seed')) $('#seed').value=q.get('seed');
-  if(q.get('lock')) $('#lock').value=q.get('lock');
-});
+// シーン準備ログ
+document.querySelector('a-scene').addEventListener('loaded', ()=> log("scene loaded"));
 </script>
 </body>
 </html>
