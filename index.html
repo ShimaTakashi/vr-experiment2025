@@ -1,359 +1,133 @@
 <!DOCTYPE html>
 <html lang="ja">
 <head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>WebXR 360 × Google Forms Runner</title>
-  <!-- A‑Frame CDN -->
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>VR Experiment</title>
+
+  <!-- A-Frame -->
   <script src="https://aframe.io/releases/1.5.0/aframe.min.js"></script>
+
+  <!-- HDR / EXR Loaders (three.js r152系 = A-Frame1.5.0と相性が良い) -->
+  <script src="https://cdn.jsdelivr.net/npm/three@0.152.2/examples/js/loaders/RGBELoader.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/three@0.152.2/examples/js/loaders/EXRLoader.js"></script>
+
   <style>
-    html, body { margin:0; height:100%; background:#000; font-family: system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, "Hiragino Kaku Gothic ProN", "Noto Sans JP", "Yu Gothic", Meiryo, sans-serif; }
-    #hud { position: fixed; inset: 0; display: grid; place-items: center; pointer-events: none; }
-    .panel { background: rgba(10,10,10,.8); color:#fff; padding: 24px; border-radius: 16px; width: min(92vw, 760px); pointer-events: auto; }
-    .row { display:flex; gap:12px; align-items:center; }
-    label { display:block; margin:.25rem 0 .5rem; font-weight:600; }
-    input, button, select { font-size: 16px; padding: 10px 12px; border-radius: 12px; border: 1px solid #444; background:#111; color:#fff; }
-    button { cursor:pointer; border: 1px solid #666; }
-    button:disabled { opacity:.5; cursor:not-allowed; }
-    .stack { display:grid; gap:14px; }
-    #status { position: fixed; left: 12px; bottom: 12px; color:#fff; opacity:.8; font-size: 14px; }
-    #countdown { font-size: 28px; font-weight:700; text-align:center; }
-    #formWrap { position: fixed; right: 10px; top: 10px; width: min(720px, 48vw); height: min(80vh, 720px); border-radius: 16px; overflow: hidden; box-shadow: 0 10px 40px rgba(0,0,0,.6); display:none; }
-    #formFrame { width: 100%; height: 100%; border:0; background:#111; }
-    #overlayMsg { text-align:center; font-size:18px; opacity:.9; }
-    #progressBar { height: 8px; width:100%; background: #222; border-radius: 8px; overflow: hidden; }
-    #bar { height:100%; width:0%; background: #4ade80; transition: width .2s linear; }
+    #ui {
+      position: fixed;
+      top: 0; left: 0; width: 100%; height: 100%;
+      background: rgba(0,0,0,0.85);
+      color: white;
+      display: flex; flex-direction: column;
+      align-items: center; justify-content: center;
+      font-size: 1.4rem;
+      z-index: 9999;
+    }
+    button {
+      padding: 12px 24px;
+      background: #3a7; color: white;
+      border: none; border-radius: 6px;
+      font-size: 1.2rem;
+      cursor: pointer;
+      margin-top: 1rem;
+    }
   </style>
-  <!-- three.js HDR/EXR loaders for equirectangular textures -->
-  <script src="https://cdn.jsdelivr.net/npm/three@0.160.0/examples/js/loaders/RGBELoader.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/three@0.160.0/examples/js/loaders/EXRLoader.js"></script>
 </head>
+
 <body>
-  <!-- 360° Scene -->
-  <a-scene renderer="colorManagement: true;" vr-mode-ui="enabled: true">
-    <a-sky id="sky" src="#" rotation="0 0 0" ></a-sky>
-    <a-entity position="0 1.6 0">
-      <a-entity camera look-controls wasd-controls="enabled:false"></a-entity>
-    </a-entity>
-  </a-scene>
+<div id="ui">
+  <div>参加者ID（PID）を入力してください：</div>
+  <input id="pidInput" style="font-size:1.2rem; padding:6px; margin-top:10px;">
+  <button onclick="startExperiment()">開始</button>
+</div>
 
-  <!-- HUD / UI -->
-  <div id="hud" aria-live="polite">
-    <div id="startPanel" class="panel stack">
-      <h2>360° 提示 + フォーム評価 実験</h2>
-      <p>説明：1枚目の提示から <b>10秒後</b> にGoogleフォームが開きます。<br>送信すると自動で次の画像に進み、全 <span id="totalSpan">16</span> 条件を評価します。</p>
-      <div class="stack">
-        <div>
-          <label for="pid">被験者ID</label>
-          <input id="pid" placeholder="例: S001" autocomplete="off" />
-        </div>
-        <div class="row">
-          <div style="flex:1">
-            <label for="seed">乱数シード（任意）</label>
-            <input id="seed" placeholder="未入力なら自動" autocomplete="off" />
-          </div>
-          <div style="width: 180px">
-            <label for="lockSec">提示ロック秒数</label>
-            <select id="lockSec">
-              <option value="10" selected>10秒</option>
-              <option value="15">15秒</option>
-              <option value="20">20秒</option>
-            </select>
-          </div>
-        </div>
-      </div>
-      <button id="startBtn">開始</button>
-      <small style="opacity:.7">Quest ブラウザで全画面にして実施してください。</small>
-    </div>
+<div id="nextOverlay" style="display:none; position:fixed; top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.85);color:white;z-index:9999;align-items:center;justify-content:center;flex-direction:column;">
+  <div style="font-size:1.4rem;">Googleフォームに回答して送信してください。</div>
+  <div style="font-size:1.1rem; margin-top:10px;">送信が終わったら、下のボタンを押すと次の画像に進みます。</div>
+  <button onclick="continueToNext()">次へ</button>
+</div>
 
-    <div id="lockPanel" class="panel stack" style="display:none">
-      <div id="overlayMsg">周囲を見回して観察してください。<br>フォームは <b><span id="secLeft">10</span> 秒</b> 後に表示されます。</div>
-      <div id="progressBar"><div id="bar"></div></div>
-      <div id="countdown">10</div>
-      <div style="opacity:.7; text-align:center"><span id="imgLabel">Image 1 / 16</span></div>
-    </div>
-  </div>
+<a-scene>
+  <a-sky id="sky" radius="10"></a-sky>
+  <a-entity camera look-controls></a-entity>
+</a-scene>
 
-  <!-- Google Form Iframe -->
-  <div id="formWrap">
-    <iframe id="formFrame" allow="clipboard-write *;" referrerpolicy="no-referrer"></iframe>
-  </div>
+<script>
+/* ✅ GoogleフォームURL */
+const GOOGLE_FORM_URL = "https://docs.google.com/forms/d/e/1FAIpQLSc7bClpct_WSlABMw2oSgxIvqLSIBBuCK_s9rOElQB025EAZw/viewform";
 
-  <div id="status"></div>
+/* ✅ HDR画像（あなたのデータに合わせ済） */
+let IMAGES = [
+  '1.hdr','8.hdr','15.hdr','22.hdr','29.hdr','36.hdr',
+  '43.hdr','50.hdr','57.hdr','64.hdr','71.hdr','78.hdr',
+  '85.hdr','92.hdr','99.hdr','106.hdr'
+];
 
-  <script>
-    // =====================
-    // ==== CONFIG AREA ====
-    // =====================
+/* ✅ ランダムシャッフル */
+IMAGES = IMAGES.sort(()=>Math.random()-0.5);
 
-    // TODO: ここに 16枚の360°画像URL（等距離長方形 equirectangular）を登録してください。
-    // 例: 企業内ホスティング or CDN / GitHub Pages などに配置
-    const IMAGES = [
-      {name: '1',   src: '1.hdr'},
-      {name: '8',   src: '8.hdr'},
-      {name: '15',  src: '15.hdr'},
-      {name: '22',  src: '22.hdr'},
-      {name: '29',  src: '29.hdr'},
-      {name: '36',  src: '36.hdr'},
-      {name: '43',  src: '43.hdr'},
-      {name: '50',  src: '50.hdr'},
-      {name: '57',  src: '57.hdr'},
-      {name: '64',  src: '64.hdr'},
-      {name: '71',  src: '71.hdr'},
-      {name: '78',  src: '78.hdr'},
-      {name: '85',  src: '85.hdr'},
-      {name: '92',  src: '92.hdr'},
-      {name: '99',  src: '99.hdr'},
-      {name: '106', src: '106.hdr'},
-    ];
+let currentIndex = 0;
+let pid = "";
 
+/* ✅ HDR ロード対応表示関数 */
+function setSky(src) {
+  const sky = document.querySelector("#sky");
+  const sceneObj = document.querySelector('a-scene').object3D;
+  const isHDR = /\.hdr$/i.test(src);
+  const isEXR = /\.exr$/i.test(src);
 
-    // TODO: Google フォームの「プレフィルURL（またはフォームURL）」に置き換えてください
-    // 例: const GOOGLE_FORM_BASE = 'https://docs.google.com/forms/d/e/XXXXXXXXXXXX/viewform';
-    const GOOGLE_FORM_BASE = 'https://docs.google.com/forms/d/e/1FAIpQLSc7bClpct_WSlABMw2oSgxIvqLSIBBuCK_s9rOElQB025EAZw/viewform?usp=header';
-
-    // TODO: Googleフォームの各質問に対応する entry.X へのマッピング
-    // 下記は例です。実際の entryID はフォームの「プレフィル」から控えてください。
-    const FORM_ENTRIES = {
-      pid: 'entry.1111111111',      // 被験者ID
-      condition: 'entry.2222222222',// 条件番号（1..16）
-      image: 'entry.3333333333',    // 画像名（ファイル名など）
-      timestamp: 'entry.4444444444' // ページ遷移時刻
-      // 以降、快適性などの評価項目は Google Form 側の設問に合わせてフォーム内で回答
-    };
-
-    // フォーム送信完了URLの一意な判定（Google側は formResponse に遷移する）
-    const FORM_RESPONSE_KEYWORD = 'formResponse';
-
-    // =====================
-    // ====== APP LOGIC =====
-    // =====================
-
-    const sky = document.getElementById('sky');
-    const hud = document.getElementById('hud');
-    const startPanel = document.getElementById('startPanel');
-    const lockPanel = document.getElementById('lockPanel');
-    const startBtn = document.getElementById('startBtn');
-    const pidInput = document.getElementById('pid');
-    const seedInput = document.getElementById('seed');
-    const lockSecSel = document.getElementById('lockSec');
-    const secLeftEl = document.getElementById('secLeft');
-    const countdownEl = document.getElementById('countdown');
-    const imgLabel = document.getElementById('imgLabel');
-    const status = document.getElementById('status');
-
-    const formWrap = document.getElementById('formWrap');
-    const formFrame = document.getElementById('formFrame');
-    const bar = document.getElementById('bar');
-    const totalSpan = document.getElementById('totalSpan');
-
-    totalSpan.textContent = String(IMAGES.length);
-
-    let order = [...IMAGES];
-    let currentIndex = -1;
-    let lockSeconds = 10;
-    let pid = '';
-    let timerId = null;
-    let progId = null;
-
-    // 乱数シード付きシャッフル（Fisher–Yates）
-    function seededRandom(seed) {
-      // xorshift32 的な簡易PRNG
-      let x = seed >>> 0;
-      return function() {
-        x ^= x << 13; x >>>= 0;
-        x ^= x >>> 17; x >>>= 0;
-        x ^= x << 5;  x >>>= 0;
-        return (x >>> 0) / 0xFFFFFFFF;
-      }
+  // 前の背景を破棄
+  try {
+    if(sceneObj.background && sceneObj.background.dispose){
+      sceneObj.background.dispose();
     }
-    function shuffle(arr, seedStr) {
-      const a = [...arr];
-      let rnd = Math.random;
-      if (seedStr && seedStr.trim() !== '') {
-        // シードは文字列からハッシュ生成
-        let h = 2166136261;
-        for (let i=0; i<seedStr.length; i++) {
-          h ^= seedStr.charCodeAt(i);
-          h = Math.imul(h, 16777619);
-        }
-        rnd = seededRandom(h);
-      }
-      for (let i = a.length - 1; i > 0; i--) {
-        const j = Math.floor(rnd() * (i + 1));
-        [a[i], a[j]] = [a[j], a[i]];
-      }
-      return a;
-    }
+  }catch(e){}
 
-    function setSky(src) {
-      // Auto-detect by extension.
-      const isHDR = /\.hdr$/i.test(src);
-      const isEXR = /\.exr$/i.test(src);
-      const sceneObj = document.querySelector('a-scene').object3D;
-      // Clean up previous background/texture
-      try {
-        const oldBg = sceneObj.background;
-        if (oldBg && oldBg.dispose) oldBg.dispose();
-      } catch(e) {}
-
-      if (isHDR || isEXR) {
-        // Hide <a-sky> when using true HDR background
-        sky.setAttribute('visible', false);
-        const loader = isEXR ? new THREE.EXRLoader() : new THREE.RGBELoader();
-        loader.setDataType(THREE.UnsignedByteType);
-        loader.load(src, (tex) => {
-          tex.mapping = THREE.EquirectangularReflectionMapping;
-          sceneObj.background = tex; // Use as scene background for full 360 pano
-          log(`HDR/EXR loaded: ${src}`);
-        }, undefined, (err) => {
-          console.error('HDR/EXR load error', err);
-          // Fallback: keep sky visible but it won't load HDR; show status
-          sky.setAttribute('visible', true);
-          sky.setAttribute('src', '');
-          log('HDR/EXRを読み込めませんでした。JPG/PNG/WebPへのトーンマップ変換をご検討ください。');
-        });
-      } else {
-        // Standard LDR path (JPG/PNG/WebP)
-        sceneObj.background = null; // ensure no HDR bg remains
-        sky.setAttribute('visible', true);
-        sky.setAttribute('src', src);
-      }
-    }
-
-    function log(msg) {
-      status.textContent = msg;
-      console.log(msg);
-    }
-
-    function nowIso() {
-      return new Date().toISOString();
-    }
-
-    function buildPrefillURL(base, params) {
-      const usp = new URLSearchParams();
-      for (const [k,v] of Object.entries(params)) {
-        usp.set(k, v);
-      }
-      // Google Forms は "viewform?usp=pp_url&entry.x=..." 形式でプレフィル
-      const url = `${base}?usp=pp_url&${usp.toString()}`;
-      return url;
-    }
-
-    function showLock(count) {
-      hud.style.display = 'grid';
-      startPanel.style.display = 'none';
-      lockPanel.style.display = 'block';
-      secLeftEl.textContent = String(count);
-      countdownEl.textContent = String(count);
-      formWrap.style.display = 'none';
-      bar.style.width = '0%';
-    }
-
-    function showForm(url) {
-      formFrame.src = url;
-      formWrap.style.display = 'block';
-    }
-
-    function nextImage() {
-      currentIndex++;
-      if (currentIndex >= order.length) {
-        // 完了
-        hud.style.display = 'grid';
-        lockPanel.innerHTML = '<div class="stack"><h2>完了しました。ご協力ありがとうございました。</h2><button onclick="location.reload()">最初に戻る</button></div>';
-        formWrap.style.display = 'none';
-        return;
-      }
-      const item = order[currentIndex];
-      setSky(item.src);
-      imgLabel.textContent = `Image ${currentIndex+1} / ${order.length}`;
-      log(`Showing: ${item.name} (${currentIndex+1}/${order.length})`);
-      // ロック → カウントダウン
-      let remain = lockSeconds;
-      showLock(remain);
-
-      // プログレスバー
-      let elapsed = 0;
-      const total = remain;
-      clearInterval(progId);
-      progId = setInterval(() => {
-        elapsed += 0.2; // 200msごと
-        const pct = Math.min(100, (elapsed/total)*100);
-        bar.style.width = pct + '%';
-      }, 200);
-
-      clearInterval(timerId);
-      timerId = setInterval(() => {
-        remain -= 1;
-        secLeftEl.textContent = String(Math.max(0, remain));
-        countdownEl.textContent = String(Math.max(0, remain));
-        if (remain <= 0) {
-          clearInterval(timerId);
-          clearInterval(progId);
-          // フォームを表示
-          const params = {};
-          params[FORM_ENTRIES.pid] = pid;
-          params[FORM_ENTRIES.condition] = String(currentIndex+1);
-          params[FORM_ENTRIES.image] = item.name;
-          params[FORM_ENTRIES.timestamp] = nowIso();
-          const url = buildPrefillURL(GOOGLE_FORM_BASE, params);
-          showForm(url);
-          hud.style.display = 'none';
-        }
-      }, 1000);
-    }
-
-    // フォームの送信完了（確認ページ遷移）を検知して次へ
-    formFrame.addEventListener('load', () => {
-      try {
-        const loc = formFrame.contentWindow.location.href;
-        if (loc.includes(FORM_RESPONSE_KEYWORD)) {
-          // 次の画像へ
-          formWrap.style.display = 'none';
-          nextImage();
-        }
-      } catch(e) {
-        // クロスオリジンで直接読めない場合があるので、URLの文字列取得だけ試行
-        // 取得できない環境では、下記フォールバックを使う：
-        // 1) Googleフォームの送信後に "次へ" ボタンをこのページに戻すリンクにする
-        // 2) またはフォーム上に「次へ」ボタンを追加して、postMessageで通知
-        console.warn('Could not read iframe URL due to cross-origin. Consider using confirmation page redirect back to this app.');
-      }
+  if(isHDR || isEXR){
+    sky.setAttribute('visible', false);
+    const loader = isEXR ? new THREE.EXRLoader() : new THREE.RGBELoader();
+    loader.setDataType(THREE.UnsignedByteType);
+    loader.load(src, (texture)=>{
+      texture.mapping = THREE.EquirectangularReflectionMapping;
+      sceneObj.background = texture;
     });
+  } else {
+    sceneObj.background = null;
+    sky.setAttribute('visible', true);
+    sky.setAttribute('src', src);
+  }
+}
 
-    // スタート
-    startBtn.addEventListener('click', () => {
-      pid = (pidInput.value || '').trim();
-      lockSeconds = parseInt(lockSecSel.value, 10) || 10;
-      const seedStr = (seedInput.value || '').trim();
-      if (!pid) {
-        alert('被験者IDを入力してください');
-        return;
-      }
-      order = shuffle(IMAGES, seedStr);
-      // URLパラメータでも seed 指定できる
-      const usp = new URLSearchParams(location.search);
-      const urlSeed = usp.get('seed');
-      if (urlSeed && !seedStr) {
-        order = shuffle(IMAGES, urlSeed);
-      }
-      // 1枚目へ
-      nextImage();
-    });
+/* ✅ 実験開始 */
+function startExperiment() {
+  pid = document.getElementById("pidInput").value.trim();
+  if(!pid){ alert("PIDを入力してください"); return; }
 
-    // URL パラメータで pid 指定可（例: ?pid=S001&seed=abc）
-    (function hydrateFromURL(){
-      const usp = new URLSearchParams(location.search);
-      const qpid = usp.get('pid');
-      const qseed = usp.get('seed');
-      const qlock = usp.get('lock');
-      if (qpid) pidInput.value = qpid;
-      if (qseed) seedInput.value = qseed;
-      if (qlock) lockSecSel.value = String(qlock);
-    })();
+  document.getElementById("ui").style.display = "none";
+  showImage();
+}
 
-  </script>
+/* ✅ 画像を表示し、10秒後にフォーム */
+function showImage() {
+  if(currentIndex >= IMAGES.length){
+    alert("実験終了です。お疲れさまでした！");
+    return;
+  }
+  setSky(IMAGES[currentIndex]);
+
+  setTimeout(()=>{
+    window.open(GOOGLE_FORM_URL, "_blank");
+    document.getElementById("nextOverlay").style.display = "flex";
+  }, 10000);
+}
+
+/* ✅ 「次へ」 */
+function continueToNext() {
+  document.getElementById("nextOverlay").style.display="none";
+  currentIndex++;
+  showImage();
+}
+</script>
+
 </body>
 </html>
-
-
