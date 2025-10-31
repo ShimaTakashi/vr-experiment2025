@@ -104,7 +104,25 @@ async function setHDR(src){
     // まず HalfFloat で試す → 失敗したら UnsignedByte に自動フォールバック
     const useEXR = isEXR;
     const tryLoad = (dataType, label) => new Promise((resolve,reject)=>{
-      const loader = useEXR ? new THREE.EXRLoader() : new THREE.RGBELoader();
+     // 変更前（動かないやつ）
+// const loader = isEXR ? new THREE.EXRLoader() : new THREE.RGBELoader();
+
+// 変更後（どちらでも動くやつ）
+const RGBE = window.RGBELoader || (THREE && THREE.RGBELoader);
+const EXR  = window.EXRLoader  || (THREE && THREE.EXRLoader);
+const LoaderClass = isEXR ? EXR : RGBE;
+
+if (!LoaderClass) {
+  log('❌ Loader not found on window.* nor THREE.*');
+  return;
+}
+
+const loader = new LoaderClass();
+if (loader.setDataType) {
+  // 型はまず HalfFloat → ダメなら UnsignedByte にフォールバック（setHDR版ならそのロジックのままでOK）
+  loader.setDataType(THREE.HalfFloatType || THREE.UnsignedByteType);
+}
+
       loader.setDataType(dataType);
       log(`loading (${label}) ${src}`);
       loader.load(src, (tex)=>{
@@ -170,3 +188,4 @@ document.addEventListener('DOMContentLoaded', ()=>{
 </script>
 </body>
 </html>
+
