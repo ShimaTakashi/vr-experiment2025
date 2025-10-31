@@ -1,92 +1,172 @@
 <!DOCTYPE html>
 <html lang="ja">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>HDR Debug</title>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>VR Experiment (HDR robust)</title>
 
-  <!-- A-Frame（THREEを内包）-->
-  <script src="https://aframe.io/releases/1.5.0/aframe.min.js"></script>
+<!-- A-Frame (THREEを内包) -->
+<script src="https://aframe.io/releases/1.5.0/aframe.min.js"></script>
 
-  <!-- A-Frame 1.5.0 と相性の良い loaders（three r152系）-->
-  <script src="https://cdn.jsdelivr.net/npm/three@0.152.2/examples/js/loaders/RGBELoader.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/three@0.152.2/examples/js/loaders/EXRLoader.js"></script>
+<!-- three r152.2 の HDR/EXR ローダ（A-Frame1.5.0 と相性◎）-->
+<script src="https://cdn.jsdelivr.net/npm/three@0.152.2/examples/js/loaders/RGBELoader.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.152.2/examples/js/loaders/EXRLoader.js"></script>
 
-  <style>
-    html,body { margin:0; height:100%; background:#000;}
-    #log {
-      position:fixed; left:10px; top:10px; z-index:9999;
-      color:#0f0; background:rgba(0,0,0,.7); padding:6px 8px;
-      font:12px/1.3 monospace; max-width:60vw; white-space:pre-wrap;
-      border-radius:6px;
-    }
-    #ui {
-      position:fixed; left:0; top:0; right:0; bottom:0; z-index:9998;
-      display:flex; align-items:center; justify-content:center;
-      color:#fff; background:rgba(0,0,0,.6); font-family:system-ui;
-    }
-  </style>
+<style>
+  html,body{margin:0;height:100%;background:#000;font-family:system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, "Noto Sans JP", Meiryo, sans-serif}
+  #ui,#next{position:fixed;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;background:rgba(0,0,0,.85);color:#fff;z-index:9999}
+  #ui input,#ui select{font-size:1.1rem;padding:.6rem .9rem;border-radius:.6rem;border:1px solid #444;background:#111;color:#fff}
+  button{padding:.8rem 1.4rem;border:1px solid #666;background:#1a7f5a;color:#fff;border-radius:.6rem;font-size:1.1rem;cursor:pointer}
+  #log{position:fixed;left:10px;bottom:10px;color:#0f0;background:rgba(0,0,0,.6);padding:.44rem .6rem;border-radius:.4rem;font:12px/1.3 monospace;z-index:10000;max-width:70vw;white-space:pre-wrap}
+</style>
 </head>
 <body>
 
-<div id="log">log:</div>
-<div id="ui">HDR 1枚テスト中…（読み込み完了で自動で消えます）</div>
+<div id="ui">
+  <h2>360° 提示 + フォーム評価</h2>
+  <p>1枚目の提示から <b>10秒後</b> にフォームが開きます。全16条件。</p>
+  <div style="display:flex;gap:12px;flex-wrap:wrap;justify-content:center">
+    <div><div>被験者ID</div><input id="pid" placeholder="S001"></div>
+    <div><div>乱数シード（任意）</div><input id="seed" placeholder="未入力なら自動"></div>
+    <div><div>ロック秒</div>
+      <select id="lock"><option value="10" selected>10秒</option><option value="15">15秒</option><option value="20">20秒</option></select>
+    </div>
+  </div>
+  <div style="margin-top:16px"><button id="start">開始</button></div>
+</div>
 
-<a-scene renderer="colorManagement: true; toneMapping: ACESFilmic; toneMappingExposure: 1.0">
+<div id="next" style="display:none">
+  <div style="text-align:center">
+    <div style="font-size:1.2rem">Googleフォームに回答して<b>送信</b>してください。</div>
+    <div style="opacity:.8;margin:.6rem 0 .9rem">送信後、下のボタンで次の画像へ</div>
+    <button id="nextBtn">次へ</button>
+  </div>
+</div>
+
+<div id="log">log:</div>
+
+<a-scene
+  renderer="colorManagement:true; physicallyCorrectLights:true; toneMapping:ACESFilmic; toneMappingExposure:1.0"
+  vr-mode-ui="enabled:true">
   <a-sky id="sky" radius="10"></a-sky>
   <a-entity camera look-controls></a-entity>
 </a-scene>
 
 <script>
+/* ===== 実験設定 ===== */
+const GOOGLE_FORM_URL = "https://docs.google.com/forms/d/e/1FAIpQLSc7bClpct_WSlABMw2oSgxIvqLSIBBuCK_s9rOElQB025EAZw/viewform";
+let IMAGES = [
+  '1.hdr','8.hdr','15.hdr','22.hdr','29.hdr','36.hdr',
+  '43.hdr','50.hdr','57.hdr','64.hdr','71.hdr','78.hdr',
+  '85.hdr','92.hdr','99.hdr','106.hdr'
+];
+
 const $ = s => document.querySelector(s);
-function log(msg){ const el = $('#log'); el.textContent += "\n" + msg; console.log(msg); }
-window.addEventListener('error', e => { log('⚠ JS Error: ' + e.message); });
+function log(m){ const el=$('#log'); el.textContent += "\n"+m; console.log(m); }
+window.addEventListener('error', e=>log('JS Error: '+e.message));
 
-// ▼ まずは 1.hdr だけを表示（ルート直下にある想定）
-const TEST_HDR = '1.hdr';
+function shuffle(a, seedStr){
+  const arr=[...a]; let rnd=Math.random;
+  if(seedStr&&seedStr.trim()!==''){
+    let h=2166136261; for(let i=0;i<seedStr.length;i++){ h^=seedStr.charCodeAt(i); h=Math.imul(h,16777619); }
+    let x=h>>>0; rnd=()=>{ x^=x<<13; x>>>=0; x^=x>>>17; x>>>=0; x^=x<<5; x>>>=0; return (x>>>0)/0xFFFFFFFF; };
+  }
+  for(let i=arr.length-1;i>0;i--){ const j=Math.floor(rnd()*(i+1)); [arr[i],arr[j]]=[arr[j],arr[i]]; }
+  return arr;
+}
 
-document.querySelector('a-scene').addEventListener('loaded', () => {
-  log('scene loaded');
-  setHDRBackground(TEST_HDR);
-});
+let pid='', order=[], idx=-1, lockSec=10, sceneReady=false;
 
-function setHDRBackground(src){
+async function setHDR(src){
   const sceneObj = document.querySelector('a-scene').object3D;
   const sky = $('#sky');
+  const isHDR=/\.hdr$/i.test(src), isEXR=/\.exr$/i.test(src);
 
-  const isHDR = /\.hdr$/i.test(src);
-  const isEXR = /\.exr$/i.test(src);
+  // 事前チェック（404/CORS）
+  try{
+    const r = await fetch(src,{method:'GET'});
+    if(!r.ok){ log(`❌ fetch NG (${r.status}) ${src}`); }
+    else { log(`fetch OK ${src} (${r.headers.get('content-type')||''})`); }
+  }catch(e){ log(`❌ fetch error ${src}: `+e.message); }
 
-  // 前の背景をクリア
-  try { if (sceneObj.background && sceneObj.background.dispose) sceneObj.background.dispose(); } catch(e){}
+  // 旧背景破棄
+  try{ if(sceneObj.background && sceneObj.background.dispose) sceneObj.background.dispose(); }catch(e){}
 
-  if (isHDR || isEXR){
+  if(isHDR||isEXR){
     sky.setAttribute('visible', false);
-    const loader = isEXR ? new THREE.EXRLoader() : new THREE.RGBELoader();
-    loader.setDataType(THREE.UnsignedByteType);
 
-    log('loading ' + src);
-    loader.load(src, (tex) => {
-      tex.mapping = THREE.EquirectangularReflectionMapping;
-      tex.needsUpdate = true;
-      sceneObj.background = tex;
-      log('✅ applied ' + src);
-      $('#ui').style.display = 'none';
-    }, undefined, (err) => {
-      log('❌ load error ' + src);
-      console.error(err);
-      sceneObj.background = null;
-      sky.setAttribute('visible', true);
-      sky.setAttribute('src', '');
+    // ローダ本体存在チェック
+    if(!THREE || (!THREE.RGBELoader && !THREE.EXRLoader)){
+      log('❌ Loader not found. スクリプト読み込み順を確認してください。');
+      return;
+    }
+
+    // まず HalfFloat で試す → 失敗したら UnsignedByte に自動フォールバック
+    const useEXR = isEXR;
+    const tryLoad = (dataType, label) => new Promise((resolve,reject)=>{
+      const loader = useEXR ? new THREE.EXRLoader() : new THREE.RGBELoader();
+      loader.setDataType(dataType);
+      log(`loading (${label}) ${src}`);
+      loader.load(src, (tex)=>{
+        tex.mapping = THREE.EquirectangularReflectionMapping;
+        tex.needsUpdate = true;
+        sceneObj.background = tex;
+        log(`✅ applied (${label}) ${src}`);
+        resolve();
+      }, undefined, (err)=>{ log(`⚠ load error (${label}) ${src}`); reject(err); });
     });
+
+    try{
+      await tryLoad(THREE.HalfFloatType, 'HalfFloat');
+    }catch(_){
+      try{
+        await tryLoad(THREE.UnsignedByteType, 'UnsignedByte');
+      }catch(e2){
+        log('❌ both loaders failed: '+src);
+        console.error(e2);
+        sceneObj.background=null; sky.setAttribute('visible',true); sky.setAttribute('src','');
+      }
+    }
   }else{
-    // LDRフォールバック
-    sceneObj.background = null;
-    sky.setAttribute('visible', true);
-    sky.setAttribute('src', src);
-    $('#ui').style.display = 'none';
+    sceneObj.background=null; sky.setAttribute('visible',true); sky.setAttribute('src',src);
   }
 }
+
+function nextImage(){
+  idx++;
+  if(idx>=order.length){ alert('完了しました。ご協力ありがとうございました。'); return; }
+  const src = order[idx];
+  log(`show ${idx+1}/${order.length}: ${src}`);
+  setHDR(src).then(()=>{
+    setTimeout(()=>{
+      window.open(GOOGLE_FORM_URL,'_blank');
+      $('#next').style.display='flex';
+    }, lockSec*1000);
+  });
+}
+
+function startExperiment(){
+  pid = $('#pid').value.trim(); if(!pid){ alert('被験者IDを入力してください'); return; }
+  lockSec = parseInt($('#lock').value,10) || 10;
+  order = shuffle(IMAGES, $('#seed').value.trim());
+  $('#ui').style.display='none';
+  const go=()=>{ if(sceneReady) nextImage(); else setTimeout(go,100); }; go();
+}
+
+function continueToNext(){ $('#next').style.display='none'; nextImage(); }
+
+document.addEventListener('DOMContentLoaded', ()=>{
+  $('#start').addEventListener('click', startExperiment);
+  $('#nextBtn').addEventListener('click', continueToNext);
+  const sceneEl=document.querySelector('a-scene');
+  sceneEl.addEventListener('loaded',()=>{ sceneReady=true; log('scene loaded'); });
+
+  // クエリ指定対応
+  const q=new URLSearchParams(location.search);
+  if(q.get('pid')) $('#pid').value=q.get('pid');
+  if(q.get('seed')) $('#seed').value=q.get('seed');
+  if(q.get('lock')) $('#lock').value=q.get('lock');
+});
 </script>
 </body>
 </html>
